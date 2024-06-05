@@ -1,10 +1,11 @@
 import uuid
 import time
 import ipaddress
-import logging
 import pylxd
+import json
 from os import chmod
 from Crypto.PublicKey import RSA
+
 
 def create_keypair():
     """
@@ -21,6 +22,44 @@ def create_keypair():
     return pubkey
 
 
+def get_nodes(client):
+    """
+    find instances
+    """
+    members = []
+    for i in client.instances.all():
+        try:
+            js = json.loads(i.description)
+            if js["nk3_node"]:
+                members.append(i)
+        except json.decoder.JSONDecodeError:
+            continue
+        except KeyError:
+            continue
+
+    if len(members) == 0:
+        print("no nodes found")
+    return members
+
+
+def cleanup(client):
+    instances_to_delete = get_nodes(client)
+
+    for i in instances_to_delete:
+        try:
+            i.stop(wait=True)
+        except pylxd.exceptions.LXDAPIException as e:
+            try:
+                if str(e) == "The instance is already stopped":
+                    pass
+            except TypeError as e:
+                print("LXD -> incus todo:")
+                print(e)
+            pass
+        i.delete(wait=True)
+        print("{} deleted".format(i.name))
+
+
 class MockNode:
     def __init__(self, client, sshkey, image):
         rnd = str(uuid.uuid4())[0:5]
@@ -35,20 +74,20 @@ class MockNode:
                 "protocol": "simplestreams",
                 "alias": image,
             },
-            "config": {"limits.cpu": "2", "limits.memory": "1GB"},
-            "type": "virtual-machine",
+            "config": {"limits.cpu": "4", "limits.memory": "8GB"},
+            "type": "container",
         }
 
         self.inst = client.instances.create(config, wait=True)
         self.inst.start(wait=True)
-#        self.wait_until_ready()
-#        self.get_valid_ipv4("eth0")
+        self.wait_until_ready()
+        self.get_valid_ipv4("eth0")
 
-#        err = self.inst.execute(
-#            [pkgm, "install", "python3", "openssh-server", "ca-certificates", "-y"]
-#        )
-        if err.exit_code != 0:
-            raise RuntimeError(err.stderr)
+        #        err = self.inst.execute(
+        #            [pkgm, "install", "python3", "openssh-server", "ca-certificates", "-y"]
+        #        )
+        #        if err.exit_code != 0:
+        #            raise RuntimeError(err.stderr)
         err = self.inst.execute(["mkdir", "-p", "/root/.ssh"])
         if err.exit_code != 0:
             raise RuntimeError(err.stderr)
@@ -94,17 +133,22 @@ class MockNode:
             ]
             try:
                 ipaddress.IPv4Address(candidate_ip)
+                print("found {} at {}".format(self.name, candidate_ip))
+                self.ip = candidate_ip
             except ipaddress.AddressValueError:
                 continue
             except ConnectionResetError:
                 continue
-            else:
-                return candidate_ip
+            return
 
         raise TimeoutError("timed out waiting")
 
 
-
-client = pylxd.Client(endpoint="/var/lib/incus/unix.socket")
-pubkey = create_keypair()
-memes = MockNode(client, pubkey, 'nixos/23.11')
+if __name__ == "__main__":
+    client = pylxd.Client(endpoint="/var/lib/incus/unix.socket")
+    cleanup(client)
+    pubkey = create_keypair()
+    nodes = []
+    for n in range(3):
+        node = MockNode(client, pubkey, "nixos/23.11")
+        nodes.append(node)
