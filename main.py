@@ -99,6 +99,8 @@ if __name__ == "__main__":
 
         with n.sftp.file("/etc/nixos/configuration.nix", "r") as remote_file:
             remote_config = remote_file.readlines()
+            remote_file.seek(0)
+            remote_config_str = remote_file.read()
 
         diff = list(difflib.unified_diff(remote_config, local_config))
         diff_formatted = colored("".join(diff).strip(), "yellow")
@@ -112,10 +114,17 @@ if __name__ == "__main__":
             print(stdout.read().decode())
             print(stderr.read().decode())
             if stdout.channel.recv_exit_status() != 0:
-                raise RuntimeError
-            n.ssh.exec_command("reboot")
-            n.sftp.close()
-            n.ssh.close()
-            n.ssh_ready()
+                with n.sftp.open("/etc/nixos/configuration.nix", "w") as remote_file:
+                    remote_file.write(remote_config_str)
+                print(
+                    "`nixos-rebuild boot` failed on {}.  Changes reverted".format(
+                        n.name
+                    )
+                )
+            else:
+                n.ssh.exec_command("reboot")
+                n.sftp.close()
+                n.ssh.close()
+                n.ssh_ready()
         else:
             print(colored("No action needed on {}".format(n.name), "green"))
