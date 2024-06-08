@@ -3,6 +3,8 @@ import time
 import ipaddress
 import pylxd
 import json
+import paramiko
+import subprocess
 from os import chmod
 from Crypto.PublicKey import RSA
 
@@ -74,27 +76,36 @@ class MockNode:
                 "protocol": "simplestreams",
                 "alias": image,
             },
-            "config": {"limits.cpu": "4", "limits.memory": "8GB"},
-            "type": "container",
+            "config": {
+                "limits.cpu": "4",
+                "limits.memory": "8GB",
+                "security.secureboot": "false",
+            },
+            "type": "virtual-machine",
         }
 
         self.inst = client.instances.create(config, wait=True)
-        self.inst.start(wait=True)
+        # TODO: no worky vms but worky containers?
+        # self.inst.start(wait=True)
+        result = subprocess.run('incus start {}'.format(self.name), shell=True, capture_output=True, text=True)
         self.wait_until_ready()
-        self.get_valid_ipv4("eth0")
+        self.get_valid_ipv4("enp5s0")
 
-        #        err = self.inst.execute(
-        #            [pkgm, "install", "python3", "openssh-server", "ca-certificates", "-y"]
-        #        )
-        #        if err.exit_code != 0:
-        #            raise RuntimeError(err.stderr)
         err = self.inst.execute(["mkdir", "-p", "/root/.ssh"])
         if err.exit_code != 0:
             raise RuntimeError(err.stderr)
 
+        print('setting up ssh')
         self.inst.files.put("/root/.ssh/authorized_keys", sshkey.exportKey("OpenSSH"))
         # wow! subsequent reboots in network configuration were borking our ssh installation/configuration
         self.inst.execute(["sync"])
+
+        self.ssh = paramiko.SSHClient()
+        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        private_key = paramiko.RSAKey.from_private_key_file("private.key")
+        self.ssh.connect(self.ip, 22, "root", pkey=private_key)
+        stdin, stdout, stderr = self.ssh.exec_command("hostname")
+        print(stdout.read().decode())
 
     def wait_until_ready(self):
         """
@@ -149,6 +160,9 @@ if __name__ == "__main__":
     cleanup(client)
     pubkey = create_keypair()
     nodes = []
+
     for n in range(3):
         node = MockNode(client, pubkey, "nixos/23.11")
         nodes.append(node)
+
+    

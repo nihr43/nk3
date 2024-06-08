@@ -1,0 +1,11 @@
+---
+cluster:
+  join_address: 10.38.154.31
+  join_token: f2c0617b-44b2-464e-8048-b15157a6ce0b
+  nodes:
+    10.38.154.97:
+      initiator: false
+    10.38.154.43:
+      initiator: false
+    10.38.154.31:
+      initiator: true

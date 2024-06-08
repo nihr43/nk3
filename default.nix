@@ -5,6 +5,9 @@ let
     pycryptodome
     pylxd
     jinja2
+    paramiko
+    pyyaml
+    termcolor
   ];
 
 in

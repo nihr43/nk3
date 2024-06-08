@@ -13,8 +13,30 @@
       ./lxd.nix
     ];
 
-  networking.useDHCP = false;
-  networking.interfaces.eth0.useDHCP = true;
+  networking.defaultGateway = "10.38.154.1";
+  networking.nameservers = [ "1.1.1.1" ];
+  networking.enableIPv6 = false;
+  networking.firewall.enable = false;
+  networking.dhcpcd.enable = false;
+  networking.interfaces.eth0.ipv4.addresses = [{
+    address = "{{node.name}}";
+    prefixLength = 24;
+  }];
 
-  system.stateVersion = "23.11"; # Did you read the comment?
+  services.k3s = {
+    enable = true;
+    role = "server";
+    token = "{{join_token}}";
+{% if node.initiator %}
+    clusterInit = true;
+{% else %}
+    serverAddr = "https://{{join_address}}:6443";
+{% endif %}
+  };
+
+  environment.systemPackages = with pkgs; [
+    htop
+  ];
+
+  system.stateVersion = "23.11";
 }
