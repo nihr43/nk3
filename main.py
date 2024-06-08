@@ -49,7 +49,7 @@ class Node:
                 try:
                     self.ssh.connect(self.name, 22, "root", pkey=self.private_key)
                     self.sftp = self.ssh.open_sftp()
-                except paramiko.ssh_exception.NoValidConnectionsError:
+                except (paramiko.ssh_exception.NoValidConnectionsError, TimeoutError):
                     continue
             except paramiko.ssh_exception.SSHException:
                 if i % 10 == 0:
