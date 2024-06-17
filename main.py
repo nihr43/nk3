@@ -70,7 +70,33 @@ class Node:
         raise TimeoutError
 
     def k8s_ready(self):
-        raise NotImplementedError
+        i = 0
+        while i < 300:
+            i += 1
+            try:
+                stdin, stdout, stderr = self.ssh.exec_command(
+                    "kubectl get node {} -o json".format(self.name)
+                )
+                node_json = json.loads(stdout.read().decode())
+                for condition in node_json["status"]["conditions"]:
+                    if (
+                        condition["reason"] == "KubeletReady"
+                        and condition["status"] == "True"
+                    ):
+                        print(colored("k8s is ready on {}".format(self.name), "green"))
+                        return
+                    elif (
+                        condition["reason"] == "KubeletReady"
+                        and condition["status"] == "False"
+                    ):
+                        print("k8s is not ready on {}".format(self.name))
+                        time.sleep(1)
+                        continue
+            except json.decoder.JSONDecodeError:
+                time.sleep(1)
+                continue
+
+        raise TimeoutError
 
 
 if __name__ == "__main__":
