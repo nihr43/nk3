@@ -13,24 +13,33 @@
       ./lxd.nix
     ];
 
-  networking.defaultGateway = "10.38.154.1";
+  boot.loader.grub.devices = ["{{node.boot_device}}"];
+  services.openssh = {
+    enable = true;
+    settings.PasswordAuthentication = false;
+    settings.KbdInteractiveAuthentication = false;
+    settings.PermitRootLogin = "yes";
+  };
+
+  networking.hostName = "{{node.name}}";
+  networking.defaultGateway = "{{cluster.default_gateway}}";
   networking.nameservers = [ "1.1.1.1" ];
   networking.enableIPv6 = false;
   networking.firewall.enable = false;
   networking.dhcpcd.enable = false;
-  networking.interfaces.eth0.ipv4.addresses = [{
-    address = "{{node.name}}";
+  networking.interfaces.{{node.interface}}.ipv4.addresses = [{
+    address = "{{node.ip}}";
     prefixLength = 24;
   }];
 
   services.k3s = {
     enable = true;
     role = "server";
-    token = "{{join_token}}";
+    token = "{{cluster.join_token}}";
 {% if node.initiator %}
     clusterInit = true;
 {% else %}
-    serverAddr = "https://{{join_address}}:6443";
+    serverAddr = "https://{{cluster.join_address}}:6443";
 {% endif %}
   };
 
@@ -38,5 +47,9 @@
     htop
   ];
 
+  nix.optimise.automatic = true;
+  nix.gc.automatic = true;
+  boot.tmp.cleanOnBoot = true;
+  boot.kernelModules = [ "rbd" ];
   system.stateVersion = "23.11";
 }
