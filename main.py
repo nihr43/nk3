@@ -158,13 +158,13 @@ if __name__ == "__main__":
                     )
                 )
             else:
-                print("Rebooting {}".format(n.name))
-                n.ssh.exec_command("reboot")
+                if args.nixos_action == "boot":
+                    print(f"Rebooting {n.name}")
+                    # if we just reboot, the first reconnect attempt may erroneously
+                    # succeed before the box has actually shut down
+                    n.ssh.exec_command("systemctl stop sshd && reboot")
                 n.sftp.close()
                 n.ssh.close()
-                time.sleep(
-                    10
-                )  # ouch, it takes a moment for ssh to shut down in the first place
                 n.ssh_ready()
                 cluster.k8s_ready()
         else:
