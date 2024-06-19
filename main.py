@@ -1,10 +1,12 @@
 import os
+import sys
 import time
 import yaml
 import json
 import paramiko
 import difflib
 import uuid
+import argparse
 from termcolor import colored
 from jinja2 import Environment, FileSystemLoader
 
@@ -44,13 +46,15 @@ class Node:
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.private_key = paramiko.RSAKey.from_private_key_file("private.key")
+        self.ssh.connect(self.ip, 22, "root", pkey=self.private_key)
+        self.sftp = self.ssh.open_sftp()
         self.ssh_ready()
 
     def ssh_ready(self):
         i = 0
         while i < 300:
             i += 1
-            if i % 5 == 0:
+            if i % 10 == 0:
                 print("Waiting for {} become reachable".format(self.name))
             try:
                 self.ssh.exec_command("hostname")
@@ -98,21 +102,35 @@ class Node:
 
         raise TimeoutError
 
+    def ceph_ready(self):
+        i = 0
+        while i < 300:
+            i += 1
+            stdin, stdout, stderr = self.ssh.exec_command(
+                "kubectl -n rook-ceph get cephcluster rook-ceph -o jsonpath='{.status.ceph.health}'"
+            )
+            health = stdout.read().decode()
+            if i % 10 == 0 and health != "HEALTH_OK":
+                print(f"ceph state is {health}")
+            if health == "HEALTH_OK":
+                print(f"ceph state is {health}")
+                return
+            else:
+                time.sleep(1)
 
-if __name__ == "__main__":
-    """
-    for node in cluster.nodes:
-        render configuration.nix
-        if configuration.nix is different than renders/node/configuration.nix:
-            write it
-            scp it
-            nixos-rebuild boot
-            reboot it
+        raise TimeoutError
 
-        cluster.healthcheck()
-    """
-    yam = "inventory.yaml"
-    cluster = Cluster.from_yaml(yam)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--inventory", default="inventory.yaml")
+    parser.add_argument("-n", "--nixos-action", default="boot")
+    args = parser.parse_args()
+
+    if args.nixos_action != "boot" and args.nixos_action != "switch":
+        raise AssertionError("--nixos-action must be one of boot, switch")
+
+    cluster = Cluster.from_yaml(args.inventory)
 
     file_loader = FileSystemLoader("templates/")
     env = Environment(loader=file_loader)
@@ -122,6 +140,8 @@ if __name__ == "__main__":
         os.mkdir("artifacts")
     except FileExistsError:
         pass
+
+    #    cluster.k8s_ready()
 
     for n in cluster.nodes:
         output = template.render(node=n, cluster=cluster)
@@ -146,17 +166,15 @@ if __name__ == "__main__":
             print(diff_formatted)
             n.sftp.put(output_file_path, "/etc/nixos/configuration.nix")
             print("Rebuilding NixOS on {}".format(n.name))
-            stdin, stdout, stderr = n.ssh.exec_command("nixos-rebuild boot")
+            stdin, stdout, stderr = n.ssh.exec_command(
+                f"nixos-rebuild {args.nixos_action}"
+            )
             if stdout.channel.recv_exit_status() != 0:
                 print(stdout.read().decode())
                 print(stderr.read().decode())
                 with n.sftp.open("/etc/nixos/configuration.nix", "w") as remote_file:
                     remote_file.write(remote_config_str)
-                print(
-                    "`nixos-rebuild boot` failed on {}.  Changes reverted".format(
-                        n.name
-                    )
-                )
+                print(f"`nixos-rebuild` failed on {n.name}.  Changes reverted")
             else:
                 if args.nixos_action == "boot":
                     print(f"Rebooting {n.name}")
@@ -167,5 +185,10 @@ if __name__ == "__main__":
                 n.ssh.close()
                 n.ssh_ready()
                 cluster.k8s_ready()
+                n.ceph_ready()
         else:
             print(colored("No action needed on {}".format(n.name), "green"))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
