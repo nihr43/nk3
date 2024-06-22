@@ -125,6 +125,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--inventory", default="inventory.yaml")
     parser.add_argument("-n", "--nixos-action", default="boot")
+    parser.add_argument("-u", "--upgrade", action="store_true")
+    parser.add_argument("--skip-initial-health", action="store_true")
     args = parser.parse_args()
 
     if args.nixos_action != "boot" and args.nixos_action != "switch":
@@ -141,7 +143,9 @@ def main():
     except FileExistsError:
         pass
 
-    #    cluster.k8s_ready()
+    if not args.skip_initial_health:
+        cluster.k8s_ready()
+        cluster.ceph_ready()
 
     for n in cluster.nodes:
         output = template.render(node=n, cluster=cluster)
@@ -165,10 +169,14 @@ def main():
             print("{} modified:".format(n.name))
             print(diff_formatted)
             n.sftp.put(output_file_path, "/etc/nixos/configuration.nix")
+
+        if diff or args.upgrade:
             print("Rebuilding NixOS on {}".format(n.name))
-            stdin, stdout, stderr = n.ssh.exec_command(
-                f"nixos-rebuild {args.nixos_action}"
-            )
+            if args.upgrade:
+                nixos_cmd = f"nixos-rebuild {args.nixos_action} --upgrade"
+            else:
+                nixos_cmd = f"nixos-rebuild {args.nixos_action}"
+            stdin, stdout, stderr = n.ssh.exec_command(nixos_cmd)
             if stdout.channel.recv_exit_status() != 0:
                 print(stdout.read().decode())
                 print(stderr.read().decode())
