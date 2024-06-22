@@ -1,16 +1,16 @@
 # nk3
 
-Long term fully-declarative management of bare-metal k3s clusters on NixOS.
+Sustainable, declarative management of bare-metal k3s clusters on NixOS.
 
 ## rationale
 
-[NixOS](https://nixos.org/) "is a Linux distribution that uses Nix, a tool for reproducible, declarative and reliable package management and system configuration".  These properties make it an excellent choice for 'clean' long-term management of physical kubernetes nodes.
+[NixOS](https://nixos.org/) "is a Linux distribution that uses Nix, a tool for reproducible, declarative and reliable package management and system configuration".  These properties make it an excellent choice for clean long-term management of physical kubernetes nodes.
 
-`nk3` is the result of years of hacking together ansible roles and wrappers on various OSs and arriving at the conclusion that a single purpose-built tool is best, and declarative rather than cumulative OS configuration is without a doubt the way of the future.
+`nk3` is the result of years of hacking together ansible roles and wrappers on various OSs and arriving at the conclusion that a single purpose-built tool is best, and the declarative nature of NixOS is without a doubt the way of the future - rather than cumulative OS configuration.
 
 ## usage
 
-`nk3` reads a yaml inventory, generates a configuration.nix for each node, lands the config, nixos-rebuilds the node, reboots, and runs health checks where appropriate.  If the new config contains errors discernible by nix, the original running config will be restored.
+`nk3` reads a yaml inventory, generates a configuration.nix for each node, lands the config, nixos-rebuilds the node, drains, reboots, uncordons, and runs health checks where appropriate.  If the new config contains errors discernible by nix, the original running config will be restored.
 
 `inventory.yaml` may resemble the following:
 
