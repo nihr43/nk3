@@ -102,3 +102,50 @@ No action needed on 933fa9c8-51d7-5477-8163-5890a80109bd
 ```
 
 The changed template is applied to the appropriate node, it is rebuilt, it is rebooted, and health of the cluster is asserted.
+
+`nk3` now supports OS upgrade via `nixos-rebuild boot --upgrade`.  TODO: nix-channel release upgrades.
+
+```
+nk3 > nix-shell . --run 'python3 main.py --upgrade'
+d752cf78-d889-5bd9-8dd4-2bb7eeb898f4 is reachable
+538f6fb5-5666-5387-9faf-fdea7aa309f7 is reachable
+933fa9c8-51d7-5477-8163-5890a80109bd is reachable
+k8s is ready on 538f6fb5-5666-5387-9faf-fdea7aa309f7
+k8s is ready on d752cf78-d889-5bd9-8dd4-2bb7eeb898f4
+k8s is ready on 933fa9c8-51d7-5477-8163-5890a80109bd
+ceph state is HEALTH_OK
+Rebuilding NixOS on d752cf78-d889-5bd9-8dd4-2bb7eeb898f4
+Draining d752cf78-d889-5bd9-8dd4-2bb7eeb898f4
+Rebooting d752cf78-d889-5bd9-8dd4-2bb7eeb898f4
+d752cf78-d889-5bd9-8dd4-2bb7eeb898f4 is reachable
+k8s is ready on 538f6fb5-5666-5387-9faf-fdea7aa309f7
+k8s is ready on 933fa9c8-51d7-5477-8163-5890a80109bd
+k8s is ready on d752cf78-d889-5bd9-8dd4-2bb7eeb898f4
+d752cf78-d889-5bd9-8dd4-2bb7eeb898f4 uncordoned
+ceph state is HEALTH_WARN
+ceph state is HEALTH_WARN
+ceph state is HEALTH_OK
+Rebuilding NixOS on 538f6fb5-5666-5387-9faf-fdea7aa309f7
+Draining 538f6fb5-5666-5387-9faf-fdea7aa309f7
+Rebooting 538f6fb5-5666-5387-9faf-fdea7aa309f7
+538f6fb5-5666-5387-9faf-fdea7aa309f7 is reachable
+k8s is ready on 933fa9c8-51d7-5477-8163-5890a80109bd
+k8s is ready on d752cf78-d889-5bd9-8dd4-2bb7eeb898f4
+k8s is ready on 538f6fb5-5666-5387-9faf-fdea7aa309f7
+538f6fb5-5666-5387-9faf-fdea7aa309f7 uncordoned
+ceph state is HEALTH_WARN
+ceph state is HEALTH_WARN
+ceph state is HEALTH_OK
+Rebuilding NixOS on 933fa9c8-51d7-5477-8163-5890a80109bd
+Draining 933fa9c8-51d7-5477-8163-5890a80109bd
+Rebooting 933fa9c8-51d7-5477-8163-5890a80109bd
+933fa9c8-51d7-5477-8163-5890a80109bd is reachable
+k8s is ready on 538f6fb5-5666-5387-9faf-fdea7aa309f7
+k8s is ready on d752cf78-d889-5bd9-8dd4-2bb7eeb898f4
+k8s is ready on 933fa9c8-51d7-5477-8163-5890a80109bd
+933fa9c8-51d7-5477-8163-5890a80109bd uncordoned
+ceph state is HEALTH_WARN
+ceph state is HEALTH_WARN
+ceph state is HEALTH_WARN
+ceph state is HEALTH_OK
+```
