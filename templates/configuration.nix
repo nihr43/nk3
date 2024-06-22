@@ -51,5 +51,4 @@
   nix.gc.automatic = true;
   boot.tmp.cleanOnBoot = true;
   boot.kernelModules = [ "rbd" ];
-  system.stateVersion = "23.11";
 }
