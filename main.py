@@ -47,17 +47,7 @@ class Cluster:
                 sys.exit(1)
 
     def ceph_ready(self):
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            futures = {pool.submit(n.ceph_ready): n for n in self.nodes}
-
-        for future in as_completed(futures):
-            try:
-                result = future.result()
-                if result:
-                    print(result)
-            except Exception:
-                traceback.print_exc()
-                sys.exit(1)
+        self.nodes[0].ceph_ready()
 
 
 class Node:
@@ -131,13 +121,18 @@ class Node:
         while i < 600:
             i += 1
             stdin, stdout, stderr = self.ssh.exec_command(
-                "kubectl -n rook-ceph get cephcluster rook-ceph -o jsonpath='{.status.ceph.health}'"
+                "kubectl -n rook-ceph exec deployment/rook-ceph-tools --pod-running-timeout=5m -- ceph status -f json"
             )
-            health = stdout.read().decode()
+            try:
+                js = json.loads(stdout.read().decode())
+            except json.decoder.JSONDecodeError:
+                time.sleep(1)
+                continue
+            health = js["health"]["status"]
             if i % 10 == 0 and health != "HEALTH_OK":
                 print(f"ceph state is {health}")
             if health == "HEALTH_OK":
-                print(colored(f"ceph state is {health} on {self.name}", "green"))
+                print(colored(f"ceph state is {health}", "green"))
                 return
             else:
                 time.sleep(1)
