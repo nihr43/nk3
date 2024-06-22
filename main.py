@@ -7,8 +7,10 @@ import paramiko
 import difflib
 import uuid
 import argparse
+import traceback
 from termcolor import colored
 from jinja2 import Environment, FileSystemLoader
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class Cluster:
@@ -32,8 +34,30 @@ class Cluster:
             return cls(join_address, join_token, nodes, default_gateway)
 
     def k8s_ready(self):
-        for n in self.nodes:
-            n.k8s_ready()
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = {pool.submit(n.k8s_ready): n for n in self.nodes}
+
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result:
+                    print(result)
+            except Exception:
+                traceback.print_exc()
+                sys.exit(1)
+
+    def ceph_ready(self):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = {pool.submit(n.ceph_ready): n for n in self.nodes}
+
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result:
+                    print(result)
+            except Exception:
+                traceback.print_exc()
+                sys.exit(1)
 
 
 class Node:
@@ -113,7 +137,7 @@ class Node:
             if i % 10 == 0 and health != "HEALTH_OK":
                 print(f"ceph state is {health}")
             if health == "HEALTH_OK":
-                print(f"ceph state is {health}")
+                print(colored(f"ceph state is {health} on {self.name}", "green"))
                 return
             else:
                 time.sleep(1)
@@ -193,7 +217,7 @@ def main():
                 n.ssh.close()
                 n.ssh_ready()
                 cluster.k8s_ready()
-                n.ceph_ready()
+                cluster.ceph_ready()
         else:
             print(colored("No action needed on {}".format(n.name), "green"))
 
