@@ -1,16 +1,18 @@
 # nk3
 
-Sustainable, declarative management of bare-metal k3s clusters on NixOS.
+Sustainable, declarative, safe management of bare-metal k3s clusters on NixOS.
 
 ## rationale
 
 [NixOS](https://nixos.org/) "is a Linux distribution that uses Nix, a tool for reproducible, declarative and reliable package management and system configuration".  These properties make it an excellent choice for clean long-term management of physical kubernetes nodes.
 
-`nk3` is the result of years of hacking together ansible roles and wrappers on various OSs and arriving at the conclusion that a single purpose-built tool is best, and the declarative nature of NixOS is without a doubt the way of the future - rather than cumulative OS configuration.
+`nk3` is the result of years of hacking together ansible roles and wrappers on various OSs and arriving at the conclusion that a single purpose-built tool is best.  Critically, the declarative nature of NixOS is without a doubt the way of the future - rather than cumulative OS configuration or big-hammer nuke-and-pave reimaging on every change.
+
+What do I mean by 'safe'?  The author believes repeatability and determinism are security `requirements`; undefined global mutable state is the root of all evil.
 
 ## usage
 
-`nk3` reads a yaml inventory, generates a configuration.nix for each node, lands the config, nixos-rebuilds the node, drains, reboots, uncordons, and runs health checks where appropriate.  If the new config contains errors discernible by nix, the original running config will be restored.
+`nk3` reads a yaml inventory, generates a configuration.nix for each node, lands the config, nixos-rebuilds the node, drains, reboots, uncordons, and runs health checks where appropriate.  If the new config contains errors discernible by nix, the original running config will be restored.  If a change breaks a node such that kubelet doesn't recover after rebooting, the run is aborted.
 
 `inventory.yaml` may resemble the following:
 
@@ -37,7 +39,7 @@ cluster:
 
 where 172.30.190.3, ... are ips of fresh NixOS boxes with ssh enabled.  These parameters resemble the potential differences between hardware.  Everything else, including hostnames, is derived and templated.
 
-`just` provides and entrypoint:
+`just` provides an entrypoint:
 
 ```
 nk3 > just
@@ -105,7 +107,7 @@ The changed template is applied to the appropriate node, it is rebuilt, it is re
 
 ## OS Upgrades
 
-`nk3` now supports OS upgrade via `nixos-rebuild boot --upgrade`.
+`nk3` now supports OS upgrades via `nixos-rebuild boot --upgrade`.
 
 ```
 nk3 > nix-shell . --run 'python3 main.py --upgrade'
