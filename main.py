@@ -209,6 +209,14 @@ def main():
                 print(f"`nixos-rebuild` failed on {n.name}.  Changes reverted")
             else:
                 if args.nixos_action == "boot":
+                    print(f"Draining {n.name}")
+                    stdin, stdout, stderr = n.ssh.exec_command(
+                        f"kubectl drain {n.name} --ignore-daemonsets --delete-emptydir-data"
+                    )
+                    if stdout.channel.recv_exit_status() != 0:
+                        print(stdout.read().decode())
+                        print(stderr.read().decode())
+                        raise RuntimeError()
                     print(f"Rebooting {n.name}")
                     # if we just reboot, the first reconnect attempt may erroneously
                     # succeed before the box has actually shut down
@@ -217,6 +225,12 @@ def main():
                 n.ssh.close()
                 n.ssh_ready()
                 cluster.k8s_ready()
+                stdin, stdout, stderr = n.ssh.exec_command(f"kubectl uncordon {n.name}")
+                if stdout.channel.recv_exit_status() != 0:
+                    print(stdout.read().decode())
+                    print(stderr.read().decode())
+                    raise RuntimeError()
+                print(f"{n.name} uncordoned")
                 cluster.ceph_ready()
         else:
             print(colored("No action needed on {}".format(n.name), "green"))
