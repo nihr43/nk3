@@ -128,7 +128,7 @@ class Node:
 
     def ceph_ready(self):
         i = 0
-        while i < 300:
+        while i < 600:
             i += 1
             stdin, stdout, stderr = self.ssh.exec_command(
                 "kubectl -n rook-ceph get cephcluster rook-ceph -o jsonpath='{.status.ceph.health}'"
