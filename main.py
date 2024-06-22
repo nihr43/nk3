@@ -220,12 +220,15 @@ def main():
                 n.ssh.close()
                 n.ssh_ready()
                 cluster.k8s_ready()
-                stdin, stdout, stderr = n.ssh.exec_command(f"kubectl uncordon {n.name}")
-                if stdout.channel.recv_exit_status() != 0:
-                    print(stdout.read().decode())
-                    print(stderr.read().decode())
-                    raise RuntimeError()
-                print(f"{n.name} uncordoned")
+                if args.nixos_action == "boot":
+                    stdin, stdout, stderr = n.ssh.exec_command(
+                        f"kubectl uncordon {n.name}"
+                    )
+                    if stdout.channel.recv_exit_status() != 0:
+                        print(stdout.read().decode())
+                        print(stderr.read().decode())
+                        raise RuntimeError()
+                    print(f"{n.name} uncordoned")
                 cluster.ceph_ready()
         else:
             print(colored("No action needed on {}".format(n.name), "green"))
