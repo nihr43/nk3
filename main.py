@@ -14,11 +14,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class Cluster:
-    def __init__(self, join_address, join_token, nodes, default_gateway):
+    def __init__(self, join_address, join_token, nodes, default_gateway, nix_channel):
         self.join_address = join_address
         self.join_token = join_token
         self.nodes = nodes
         self.default_gateway = default_gateway
+        self.nix_channel = nix_channel
 
     @classmethod
     def from_yaml(cls, file_path):
@@ -28,10 +29,11 @@ class Cluster:
             join_address = cluster_data["join_address"]
             join_token = cluster_data["join_token"]
             default_gateway = cluster_data["default_gateway"]
+            nix_channel = cluster_data["nix_channel"]
             nodes = []
             for n, d in cluster_data["nodes"].items():
                 nodes.append(Node(n, d["initiator"], d["interface"], d["boot_device"]))
-            return cls(join_address, join_token, nodes, default_gateway)
+            return cls(join_address, join_token, nodes, default_gateway, nix_channel)
 
     def k8s_ready(self):
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -192,16 +194,24 @@ def main():
         if diff or args.upgrade:
             print("Rebuilding NixOS on {}".format(n.name))
             if args.upgrade:
+                channel_cmd = f"nix-channel --add https://nixos.org/channels/{cluster.nix_channel} nixos"
+                stdin, stdout, stderr = n.ssh.exec_command(channel_cmd)
+                if stdout.channel.recv_exit_status() != 0:
+                    print(stdout.read().decode())
+                    print(stderr.read().decode())
+                    raise RuntimeError
                 nixos_cmd = f"nixos-rebuild {args.nixos_action} --upgrade"
             else:
                 nixos_cmd = f"nixos-rebuild {args.nixos_action}"
             stdin, stdout, stderr = n.ssh.exec_command(nixos_cmd)
+
             if stdout.channel.recv_exit_status() != 0:
                 print(stdout.read().decode())
                 print(stderr.read().decode())
                 with n.sftp.open("/etc/nixos/configuration.nix", "w") as remote_file:
                     remote_file.write(remote_config_str)
                 print(f"`nixos-rebuild` failed on {n.name}.  Changes reverted")
+                raise RuntimeError()
             else:
                 if args.nixos_action == "boot":
                     print(f"Draining {n.name}")

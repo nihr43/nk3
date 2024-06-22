@@ -103,7 +103,9 @@ No action needed on 933fa9c8-51d7-5477-8163-5890a80109bd
 
 The changed template is applied to the appropriate node, it is rebuilt, it is rebooted, and health of the cluster is asserted.
 
-`nk3` now supports OS upgrade via `nixos-rebuild boot --upgrade`.  TODO: nix-channel release upgrades.
+## OS Upgrades
+
+`nk3` now supports OS upgrade via `nixos-rebuild boot --upgrade`.
 
 ```
 nk3 > nix-shell . --run 'python3 main.py --upgrade'
@@ -149,3 +151,59 @@ ceph state is HEALTH_WARN
 ceph state is HEALTH_WARN
 ceph state is HEALTH_OK
 ```
+
+`nix-channel` is sourced from the inventory, and enforced on each `--upgrade`:
+
+```
+if args.upgrade:
+    channel_cmd = f"nix-channel --add https://nixos.org/channels/{cluster.nix_channel} nixos"
+```
+
+(--add is idempotent when the same name is given)
+
+Thus, to trigger a full nixos release upgrade, simply increment `nix_channel:` in the inventory.
+We do not define `system.stateVersion` in configuration.nix, allowing nixos-rebuild to default to the current channel.  This is fine for the time being, as k3s is unaffected by the parameter (`grep -ir stateVersion nixpkgs/nixos/modules/`).
+
+If a bogus channel is given, the system will abort:
+
+```
+nk3 > nix-shell . --run 'python3 main.py -u'
+d752cf78-d889-5bd9-8dd4-2bb7eeb898f4 is reachable
+538f6fb5-5666-5387-9faf-fdea7aa309f7 is reachable
+933fa9c8-51d7-5477-8163-5890a80109bd is reachable
+k8s is ready on 538f6fb5-5666-5387-9faf-fdea7aa309f7
+k8s is ready on d752cf78-d889-5bd9-8dd4-2bb7eeb898f4
+k8s is ready on 933fa9c8-51d7-5477-8163-5890a80109bd
+ceph state is HEALTH_OK
+Rebuilding NixOS on d752cf78-d889-5bd9-8dd4-2bb7eeb898f4
+
+error: unable to download 'https://nixos.org/channels/woofwoof': HTTP error 404
+
+       response body:
+
+       <html>
+       <head><title>404 Not Found</title></head>
+       <body>
+       <h1>404 Not Found</h1>
+       <ul>
+       <li>Code: NoSuchKey</li>
+       <li>Message: The specified key does not exist.</li>
+       <li>Key: woofwoof</li>
+       <li>RequestId: WHEKMHS24749WRMB</li>
+       <li>HostId: VUgZO7OBuSXfhmEUa+PJQGiuPbzQH8Sl6As737i8fl4qkFFUyqhBdW0cQzIobB4smD928pt5RZs=</li>
+       </ul>
+       <hr/>
+       </body>
+       </html>
+
+`nixos-rebuild` failed on d752cf78-d889-5bd9-8dd4-2bb7eeb898f4.  Changes reverted
+Traceback (most recent call last):
+  File "/home/nhensel/git/nk3/main.py", line 248, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/nhensel/git/nk3/main.py", line 214, in main
+    raise RuntimeError()
+RuntimeError
+```
+
+Nothing prevents you from attempting something silly like `nixos-24.05` -> `nixos-13.10`, so don't.  Or do, as if it breaks kubernetes the run will halt after the first node is broken.
