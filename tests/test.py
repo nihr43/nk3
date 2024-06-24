@@ -87,7 +87,12 @@ class MockNode:
         self.inst = client.instances.create(config, wait=True)
         # TODO: no worky vms but worky containers?
         # self.inst.start(wait=True)
-        result = subprocess.run('incus start {}'.format(self.name), shell=True, capture_output=True, text=True)
+        subprocess.run(
+            "incus start {}".format(self.name),
+            shell=True,
+            capture_output=True,
+            text=True,
+        )
         self.wait_until_ready()
         self.get_valid_ipv4("enp5s0")
 
@@ -95,7 +100,7 @@ class MockNode:
         if err.exit_code != 0:
             raise RuntimeError(err.stderr)
 
-        print('setting up ssh')
+        print("setting up ssh")
         self.inst.files.put("/root/.ssh/authorized_keys", sshkey.exportKey("OpenSSH"))
         # wow! subsequent reboots in network configuration were borking our ssh installation/configuration
         self.inst.execute(["sync"])
@@ -164,5 +169,3 @@ if __name__ == "__main__":
     for n in range(3):
         node = MockNode(client, pubkey, "nixos/23.11")
         nodes.append(node)
-
-    
