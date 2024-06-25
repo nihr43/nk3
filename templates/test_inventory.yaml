@@ -1,0 +1,13 @@
+---
+cluster:
+  join_address: {{nodes[0].ip}}
+  join_token: {{token}}
+  default_gateway: 10.59.39.1
+  nix_channel: nixos-24.05
+  nodes:
+{% for n in nodes %}
+    {{n.ip}}:
+      initiator: false
+      interface: eth0
+      boot_device: /dev/nvme0n1
+{% endfor %}

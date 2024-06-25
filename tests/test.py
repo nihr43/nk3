@@ -7,6 +7,7 @@ import paramiko
 import subprocess
 from os import chmod
 from Crypto.PublicKey import RSA
+from jinja2 import Environment, FileSystemLoader
 
 
 def create_keypair():
@@ -114,7 +115,7 @@ class MockNode:
 
     def wait_until_ready(self):
         """
-        waits until an instance is executable
+        waits until an instance is cli executable (not ssh)
         """
         print("waiting for lxd agent to become ready on " + self.name)
         i = 0
@@ -160,12 +161,25 @@ class MockNode:
         raise TimeoutError("timed out waiting")
 
 
-if __name__ == "__main__":
+def main():
     client = pylxd.Client(endpoint="/var/lib/incus/unix.socket")
     cleanup(client)
     pubkey = create_keypair()
     nodes = []
+    file_loader = FileSystemLoader("templates/")
+    env = Environment(loader=file_loader)
+    template = env.get_template("test_inventory.yaml")
 
     for n in range(3):
-        node = MockNode(client, pubkey, "nixos/23.11")
+        node = MockNode(client, pubkey, "testy")
         nodes.append(node)
+
+    output = template.render(nodes=nodes, token=str(uuid.uuid4()))
+
+    output_file_path = "artifacts/test_inventory.yaml"
+    with open(output_file_path, "w") as f:
+        f.write(output)
+
+
+if __name__ == "__main__":
+    main()
