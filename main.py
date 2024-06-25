@@ -148,6 +148,7 @@ def main():
     parser.add_argument("-n", "--nixos-action", default="boot")
     parser.add_argument("-u", "--upgrade", action="store_true")
     parser.add_argument("--skip-initial-health", action="store_true")
+    parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
     if args.nixos_action != "boot" and args.nixos_action != "switch":
@@ -213,6 +214,9 @@ def main():
                 print(f"`nixos-rebuild` failed on {n.name}.  Changes reverted")
                 raise RuntimeError()
             else:
+                if args.verbose:
+                    print(stdout.read().decode())
+                    print(stderr.read().decode())
                 if args.nixos_action == "boot":
                     print(f"Draining {n.name}")
                     stdin, stdout, stderr = n.ssh.exec_command(
@@ -222,6 +226,9 @@ def main():
                         print(stdout.read().decode())
                         print(stderr.read().decode())
                         raise RuntimeError()
+                    if args.verbose:
+                        print(stdout.read().decode())
+                        print(stderr.read().decode())
                     print(f"Rebooting {n.name}")
                     # if we just reboot, the first reconnect attempt may erroneously
                     # succeed before the box has actually shut down
