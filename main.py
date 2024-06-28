@@ -35,7 +35,7 @@ class Cluster:
             nix_channel = cluster_data["nix_channel"]
             nodes = []
             for n, d in cluster_data["nodes"].items():
-                nodes.append(Node(n, d["initiator"], d["interface"], d["boot_device"]))
+                nodes.append(Node(n, d["initiator"], d["boot_device"]))
             return cls(join_address, join_token, nodes, default_gateway, nix_channel)
 
     def k8s_ready(self):
@@ -56,13 +56,23 @@ class Cluster:
 
 
 class Node:
-    def __init__(self, ip, initiator, interface, boot_device):
+    def __init__(self, ip, initiator, boot_device):
         self.ip = ip
         self.boot_device = boot_device
-        self.interface = interface
         self.initiator = initiator
         self.name = uuid.uuid5(uuid.NAMESPACE_OID, self.ip)
         self.ssh_ready()
+        self.interface = self.get_interface()
+
+    def get_interface(self):
+        stdin, stdout, stderr = self.ssh.exec_command(
+            "ip r get 1.1.1.1 | awk '/via/{print $5}'"
+        )
+        interface = stdout.read().decode().strip()
+        if interface.startswith(("eth", "eno", "enp")):
+            return interface
+        else:
+            raise NotImplementedError(interface)
 
     def ssh_ready(self):
         i = 0

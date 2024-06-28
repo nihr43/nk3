@@ -25,15 +25,12 @@ cluster:
   nodes:
     172.30.190.3:
       initiator: true
-      interface: enp3s0f0
       boot_device: /dev/nvme0n1
     172.30.190.4:
       initiator: false
-      interface: enp3s0f0
       boot_device: /dev/nvme0n1
     172.30.190.5:
       initiator: false
-      interface: enp3s0f0
       boot_device: /dev/nvme0n1
 ```
 
