@@ -21,7 +21,6 @@ What do I mean by 'safe'?  The author believes repeatability and determinism are
 cluster:
   join_address: 172.30.190.3
   join_token: 2f909ce8-cae1-439a-86b3-da87b7ee9f55
-  default_gateway: 172.30.190.1
   nodes:
     172.30.190.3:
       initiator: true

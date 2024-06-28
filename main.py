@@ -9,6 +9,7 @@ import uuid
 import argparse
 import traceback
 import logging
+import ipaddress
 from termcolor import colored
 from jinja2 import Environment, FileSystemLoader
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,11 +18,10 @@ logging.getLogger("paramiko").setLevel(logging.CRITICAL)
 
 
 class Cluster:
-    def __init__(self, join_address, join_token, nodes, default_gateway, nix_channel):
+    def __init__(self, join_address, join_token, nodes, nix_channel):
         self.join_address = join_address
         self.join_token = join_token
         self.nodes = nodes
-        self.default_gateway = default_gateway
         self.nix_channel = nix_channel
 
     @classmethod
@@ -31,12 +31,11 @@ class Cluster:
             cluster_data = data["cluster"]
             join_address = cluster_data["join_address"]
             join_token = cluster_data["join_token"]
-            default_gateway = cluster_data["default_gateway"]
             nix_channel = cluster_data["nix_channel"]
             nodes = []
             for n, d in cluster_data["nodes"].items():
                 nodes.append(Node(n, d["initiator"], d["boot_device"]))
-            return cls(join_address, join_token, nodes, default_gateway, nix_channel)
+            return cls(join_address, join_token, nodes, nix_channel)
 
     def k8s_ready(self):
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -63,6 +62,7 @@ class Node:
         self.name = uuid.uuid5(uuid.NAMESPACE_OID, self.ip)
         self.ssh_ready()
         self.interface = self.get_interface()
+        self.gateway = self.get_gateway()
 
     def get_interface(self):
         stdin, stdout, stderr = self.ssh.exec_command(
@@ -73,6 +73,17 @@ class Node:
             return interface
         else:
             raise NotImplementedError(interface)
+
+    def get_gateway(self):
+        stdin, stdout, stderr = self.ssh.exec_command(
+            "ip r get 1.1.1.1 | awk '/via/{print $3}'"
+        )
+        gw = stdout.read().decode().strip()
+        try:
+            ipaddress.IPv4Address(gw)
+            return gw
+        except ipaddress.AddressValueError as e:
+            raise e
 
     def ssh_ready(self):
         i = 0
