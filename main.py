@@ -8,9 +8,12 @@ import difflib
 import uuid
 import argparse
 import traceback
+import logging
 from termcolor import colored
 from jinja2 import Environment, FileSystemLoader
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+logging.getLogger("paramiko").setLevel(logging.CRITICAL)
 
 
 class Cluster:
@@ -59,11 +62,6 @@ class Node:
         self.interface = interface
         self.initiator = initiator
         self.name = uuid.uuid5(uuid.NAMESPACE_OID, self.ip)
-        self.ssh = paramiko.SSHClient()
-        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.private_key = paramiko.RSAKey.from_private_key_file("private.key")
-        self.ssh.connect(self.ip, 22, "root", pkey=self.private_key)
-        self.sftp = self.ssh.open_sftp()
         self.ssh_ready()
 
     def ssh_ready(self):
@@ -73,17 +71,21 @@ class Node:
             if i % 10 == 0:
                 print("Waiting for {} become reachable".format(self.name))
             try:
+                self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                self.ssh.connect(self.ip, 22, "root")
+                self.sftp = self.ssh.open_sftp()
                 self.ssh.exec_command("hostname")
                 print("{} is reachable".format(self.name))
                 return
             except AttributeError:
-                time.sleep(1)
-                try:
-                    self.ssh.connect(self.ip, 22, "root", pkey=self.private_key)
-                    self.sftp = self.ssh.open_sftp()
-                except (paramiko.ssh_exception.NoValidConnectionsError, TimeoutError):
-                    continue
-            except paramiko.ssh_exception.SSHException:
+                self.ssh = paramiko.SSHClient()
+                continue
+            except (
+                paramiko.ssh_exception.SSHException,
+                paramiko.ssh_exception.NoValidConnectionsError,
+                TimeoutError,
+                EOFError,
+            ):
                 time.sleep(1)
                 continue
 
