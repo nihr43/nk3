@@ -28,12 +28,11 @@ class Cluster:
     def from_yaml(cls, file_path):
         with open(file_path, "r") as file:
             data = yaml.safe_load(file)
-            cluster_data = data["cluster"]
-            join_address = cluster_data["join_address"]
-            join_token = cluster_data["join_token"]
-            nix_channel = cluster_data["nix_channel"]
+            join_address = data["join_address"]
+            join_token = data["join_token"]
+            nix_channel = data["nix_channel"]
             nodes = []
-            for n, d in cluster_data["nodes"].items():
+            for n, d in data["nodes"].items():
                 nodes.append(Node(n, d["initiator"], d["boot_device"]))
             return cls(join_address, join_token, nodes, nix_channel)
 
