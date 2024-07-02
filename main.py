@@ -256,7 +256,7 @@ def main():
     parser.add_argument("-u", "--upgrade", action="store_true")
     parser.add_argument("--skip-initial-health", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("-d", "--disruption-budget")
+    parser.add_argument("-d", "--disruption-budget", type=int)
     args = parser.parse_args()
 
     if args.nixos_action != "boot" and args.nixos_action != "switch":
