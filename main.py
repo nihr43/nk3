@@ -164,6 +164,91 @@ class Node:
         raise TimeoutError
 
 
+def reconcile(node, cluster, args):
+    file_loader = FileSystemLoader("templates/")
+    env = Environment(loader=file_loader)
+    template = env.get_template("configuration.nix")
+    output = template.render(node=node, cluster=cluster)
+
+    output_file_path = "artifacts/{}".format(node.name)
+    with open(output_file_path, "w") as f:
+        f.write(output)
+
+    with open(output_file_path, "r") as local_file:
+        local_config = local_file.readlines()
+
+    with node.sftp.file("/etc/nixos/configuration.nix", "r") as remote_file:
+        remote_config = remote_file.readlines()
+        remote_file.seek(0)
+        remote_config_str = remote_file.read()
+
+    diff = list(difflib.unified_diff(remote_config, local_config))
+    diff_formatted = colored("".join(diff).strip(), "yellow")
+
+    if diff:
+        print("{} modified:".format(node.name))
+        print(diff_formatted)
+        node.sftp.put(output_file_path, "/etc/nixos/configuration.nix")
+
+    if diff or args.upgrade:
+        print(f"Rebuilding NixOS on {node.name}")
+        if args.upgrade:
+            channel_cmd = f"nix-channel --add https://nixos.org/channels/{cluster.nix_channel} nixos"
+            stdin, stdout, stderr = node.ssh.exec_command(channel_cmd)
+            if stdout.channel.recv_exit_status() != 0:
+                print(stdout.read().decode())
+                print(stderr.read().decode())
+                raise RuntimeError
+            nixos_cmd = f"nixos-rebuild {args.nixos_action} --upgrade"
+        else:
+            nixos_cmd = f"nixos-rebuild {args.nixos_action}"
+        stdin, stdout, stderr = node.ssh.exec_command(nixos_cmd)
+
+        if stdout.channel.recv_exit_status() != 0:
+            print(stdout.read().decode())
+            print(stderr.read().decode())
+            with node.sftp.open("/etc/nixos/configuration.nix", "w") as remote_file:
+                remote_file.write(remote_config_str)
+            print(f"`nixos-rebuild` failed on {node.name}.  Changes reverted")
+            raise RuntimeError()
+        else:
+            if args.verbose:
+                print(stdout.read().decode())
+                print(stderr.read().decode())
+            if args.nixos_action == "boot":
+                print(f"Draining {node.name}")
+                stdin, stdout, stderr = node.ssh.exec_command(
+                    f"kubectl drain {node.name} --ignore-daemonsets --delete-emptydir-data"
+                )
+                if stdout.channel.recv_exit_status() != 0:
+                    print(stdout.read().decode())
+                    print(stderr.read().decode())
+                    raise RuntimeError()
+                if args.verbose:
+                    print(stdout.read().decode())
+                    print(stderr.read().decode())
+                print(f"Rebooting {node.name}")
+                # if we just reboot, the first reconnect attempt may erroneously
+                # succeed before the box has actually shut down
+                node.ssh.exec_command("systemctl stop sshd && reboot")
+            node.sftp.close()
+            node.ssh.close()
+            node.ssh_ready()
+            cluster.k8s_ready()
+            if args.nixos_action == "boot":
+                stdin, stdout, stderr = node.ssh.exec_command(
+                    f"kubectl uncordon {node.name}"
+                )
+                if stdout.channel.recv_exit_status() != 0:
+                    print(stdout.read().decode())
+                    print(stderr.read().decode())
+                    raise RuntimeError()
+                print(f"{node.name} uncordoned")
+            cluster.ceph_ready()
+    else:
+        print(colored("No action needed on {}".format(node.name), "green"))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--inventory", default="inventory.yaml")
@@ -171,16 +256,13 @@ def main():
     parser.add_argument("-u", "--upgrade", action="store_true")
     parser.add_argument("--skip-initial-health", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("-d", "--disruption-budget")
     args = parser.parse_args()
 
     if args.nixos_action != "boot" and args.nixos_action != "switch":
         raise AssertionError("--nixos-action must be one of boot, switch")
 
     cluster = Cluster.from_yaml(args.inventory)
-
-    file_loader = FileSystemLoader("templates/")
-    env = Environment(loader=file_loader)
-    template = env.get_template("configuration.nix")
 
     try:
         os.mkdir("artifacts")
@@ -191,86 +273,21 @@ def main():
         cluster.k8s_ready()
         cluster.ceph_ready()
 
-    for n in cluster.nodes:
-        output = template.render(node=n, cluster=cluster)
+    if args.disruption_budget:
+        disruption_budget = args.disruption_budget
+    else:
+        disruption_budget = len(cluster.nodes) // 2
 
-        output_file_path = "artifacts/{}".format(n.name)
-        with open(output_file_path, "w") as f:
-            f.write(output)
-
-        with open(output_file_path, "r") as local_file:
-            local_config = local_file.readlines()
-
-        with n.sftp.file("/etc/nixos/configuration.nix", "r") as remote_file:
-            remote_config = remote_file.readlines()
-            remote_file.seek(0)
-            remote_config_str = remote_file.read()
-
-        diff = list(difflib.unified_diff(remote_config, local_config))
-        diff_formatted = colored("".join(diff).strip(), "yellow")
-
-        if diff:
-            print("{} modified:".format(n.name))
-            print(diff_formatted)
-            n.sftp.put(output_file_path, "/etc/nixos/configuration.nix")
-
-        if diff or args.upgrade:
-            print("Rebuilding NixOS on {}".format(n.name))
-            if args.upgrade:
-                channel_cmd = f"nix-channel --add https://nixos.org/channels/{cluster.nix_channel} nixos"
-                stdin, stdout, stderr = n.ssh.exec_command(channel_cmd)
-                if stdout.channel.recv_exit_status() != 0:
-                    print(stdout.read().decode())
-                    print(stderr.read().decode())
-                    raise RuntimeError
-                nixos_cmd = f"nixos-rebuild {args.nixos_action} --upgrade"
-            else:
-                nixos_cmd = f"nixos-rebuild {args.nixos_action}"
-            stdin, stdout, stderr = n.ssh.exec_command(nixos_cmd)
-
-            if stdout.channel.recv_exit_status() != 0:
-                print(stdout.read().decode())
-                print(stderr.read().decode())
-                with n.sftp.open("/etc/nixos/configuration.nix", "w") as remote_file:
-                    remote_file.write(remote_config_str)
-                print(f"`nixos-rebuild` failed on {n.name}.  Changes reverted")
-                raise RuntimeError()
-            else:
-                if args.verbose:
-                    print(stdout.read().decode())
-                    print(stderr.read().decode())
-                if args.nixos_action == "boot":
-                    print(f"Draining {n.name}")
-                    stdin, stdout, stderr = n.ssh.exec_command(
-                        f"kubectl drain {n.name} --ignore-daemonsets --delete-emptydir-data"
-                    )
-                    if stdout.channel.recv_exit_status() != 0:
-                        print(stdout.read().decode())
-                        print(stderr.read().decode())
-                        raise RuntimeError()
-                    if args.verbose:
-                        print(stdout.read().decode())
-                        print(stderr.read().decode())
-                    print(f"Rebooting {n.name}")
-                    # if we just reboot, the first reconnect attempt may erroneously
-                    # succeed before the box has actually shut down
-                    n.ssh.exec_command("systemctl stop sshd && reboot")
-                n.sftp.close()
-                n.ssh.close()
-                n.ssh_ready()
-                cluster.k8s_ready()
-                if args.nixos_action == "boot":
-                    stdin, stdout, stderr = n.ssh.exec_command(
-                        f"kubectl uncordon {n.name}"
-                    )
-                    if stdout.channel.recv_exit_status() != 0:
-                        print(stdout.read().decode())
-                        print(stderr.read().decode())
-                        raise RuntimeError()
-                    print(f"{n.name} uncordoned")
-                cluster.ceph_ready()
-        else:
-            print(colored("No action needed on {}".format(n.name), "green"))
+    with ThreadPoolExecutor(max_workers=disruption_budget) as pool:
+        futures = {pool.submit(reconcile, n, cluster, args): n for n in cluster.nodes}
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result:
+                    print(result)
+            except Exception:
+                traceback.print_exc()
+                sys.exit(1)
 
 
 if __name__ == "__main__":
