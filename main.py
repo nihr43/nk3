@@ -78,6 +78,7 @@ class Cluster:
                     )
                     return
                 else:
+                    time.sleep(1)
                     continue
             except json.decoder.JSONDecodeError:
                 time.sleep(1)
