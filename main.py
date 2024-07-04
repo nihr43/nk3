@@ -86,8 +86,41 @@ class Cluster:
 
         raise TimeoutError
 
-    def deployments_ready(self):
-        raise NotImplementedError
+    def deployments_ready(self, namespace):
+        i = 0
+        while i < 600:
+            i += 1
+            try:
+                stdin, stdout, stderr = self.nodes[0].ssh.exec_command(
+                    f"kubectl get deployment -o json -n {namespace}"
+                )
+                js = json.loads(stdout.read().decode())
+                desired_healthy = len(js["items"])
+                healthy = 0
+                for d in js["items"]:
+                    for condition in d["status"]["conditions"]:
+                        if (
+                            condition["reason"] == "MinimumReplicasAvailable"
+                            and condition["status"] == "True"
+                        ):
+                            healthy += 1
+                            break
+                if healthy == desired_healthy:
+                    print(
+                        colored(
+                            f"{healthy} deployments healthy in namespace {namespace}",
+                            "green",
+                        )
+                    )
+                    return
+                else:
+                    time.sleep(1)
+                    continue
+            except json.decoder.JSONDecodeError:
+                time.sleep(1)
+                continue
+
+        raise TimeoutError
 
 
 class Node:
@@ -284,6 +317,8 @@ def reconcile(node, cluster, args):
             cluster.ceph_ready()
             cluster.daemonsets_ready("kube-system")
             cluster.daemonsets_ready("default")
+            cluster.deployments_ready("default")
+            cluster.deployments_ready("kube-system")
     else:
         print(colored("No action needed on {}".format(node.name), "green"))
 
@@ -313,6 +348,8 @@ def main():
         cluster.ceph_ready()
         cluster.daemonsets_ready("kube-system")
         cluster.daemonsets_ready("default")
+        cluster.deployments_ready("default")
+        cluster.deployments_ready("kube-system")
 
     if args.disruption_budget:
         disruption_budget = args.disruption_budget
