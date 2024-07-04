@@ -52,6 +52,42 @@ class Cluster:
     def ceph_ready(self):
         self.nodes[0].ceph_ready()
 
+    def daemonsets_ready(self, namespace: str):
+        i = 0
+        while i < 600:
+            i += 1
+            try:
+                stdin, stdout, stderr = self.nodes[0].ssh.exec_command(
+                    f"kubectl get daemonset -o json -n {namespace}"
+                )
+                js = json.loads(stdout.read().decode())
+                desired_healthy = len(js["items"])
+                healthy = 0
+                for ds in js["items"]:
+                    if (
+                        ds["status"]["numberAvailable"]
+                        == ds["status"]["desiredNumberScheduled"]
+                    ):
+                        healthy += 1
+                if healthy == desired_healthy:
+                    print(
+                        colored(
+                            f"{healthy} daemonsets healthy in namespace {namespace}",
+                            "green",
+                        )
+                    )
+                    return
+                else:
+                    continue
+            except json.decoder.JSONDecodeError:
+                time.sleep(1)
+                continue
+
+        raise TimeoutError
+
+    def deployments_ready(self):
+        raise NotImplementedError
+
 
 class Node:
     def __init__(self, ip, initiator, boot_device):
@@ -245,6 +281,8 @@ def reconcile(node, cluster, args):
                     raise RuntimeError()
                 print(f"{node.name} uncordoned")
             cluster.ceph_ready()
+            cluster.daemonsets_ready("kube-system")
+            cluster.daemonsets_ready("default")
     else:
         print(colored("No action needed on {}".format(node.name), "green"))
 
@@ -272,6 +310,8 @@ def main():
     if not args.skip_initial_health:
         cluster.k8s_ready()
         cluster.ceph_ready()
+        cluster.daemonsets_ready("kube-system")
+        cluster.daemonsets_ready("default")
 
     if args.disruption_budget:
         disruption_budget = args.disruption_budget
