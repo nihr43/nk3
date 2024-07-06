@@ -195,7 +195,7 @@ class Node:
 
     def k8s_ready(self):
         i = 0
-        while i < 300:
+        while i < 600:
             i += 1
             try:
                 stdin, stdout, stderr = self.ssh.exec_command(
