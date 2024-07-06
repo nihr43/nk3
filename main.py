@@ -270,6 +270,8 @@ def reconcile(node, cluster, args):
     if diff or args.upgrade:
         print(f"Rebuilding NixOS on {node.name}")
         if args.upgrade:
+            stdin, stdout, stderr = node.ssh.exec_command("uname -r")
+            initial_kernel = stdout.read().decode().strip()
             channel_cmd = f"nix-channel --add https://nixos.org/channels/{cluster.nix_channel} nixos"
             stdin, stdout, stderr = node.ssh.exec_command(channel_cmd)
             if stdout.channel.recv_exit_status() != 0:
@@ -324,6 +326,16 @@ def reconcile(node, cluster, args):
             list(map(cluster.daemonsets_ready, cluster.namespaces))
             list(map(cluster.deployments_ready, cluster.namespaces))
             cluster.ceph_ready()
+            if args.upgrade:
+                stdin, stdout, stderr = node.ssh.exec_command("uname -r")
+                final_kernel = stdout.read().decode().strip()
+                if final_kernel != initial_kernel:
+                    print(
+                        colored(
+                            f"Kernel upgraded from {initial_kernel} to {final_kernel} on {node.name}",
+                            "yellow",
+                        )
+                    )
     else:
         print(colored("No action needed on {}".format(node.name), "green"))
 
