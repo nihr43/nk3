@@ -18,11 +18,12 @@ logging.getLogger("paramiko").setLevel(logging.CRITICAL)
 
 
 class Cluster:
-    def __init__(self, join_address, join_token, nodes, nix_channel):
+    def __init__(self, join_address, join_token, nodes, nix_channel, namespaces):
         self.join_address = join_address
         self.join_token = join_token
         self.nodes = nodes
         self.nix_channel = nix_channel
+        self.namespaces = namespaces
 
     @classmethod
     def from_yaml(cls, file_path):
@@ -31,10 +32,11 @@ class Cluster:
             join_address = data["join_address"]
             join_token = data["join_token"]
             nix_channel = data["nix_channel"]
+            namespaces = data["watch_namespaces"]
             nodes = []
             for n, d in data["nodes"].items():
                 nodes.append(Node(n, d["initiator"], d["boot_device"]))
-            return cls(join_address, join_token, nodes, nix_channel)
+            return cls(join_address, join_token, nodes, nix_channel, namespaces)
 
     def k8s_ready(self):
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -114,6 +116,11 @@ class Cluster:
                     )
                     return
                 else:
+                    if i % 10 == 0:
+                        unhealthy = desired_healthy - healthy
+                        print(
+                            f"{unhealthy} deployments recovering in namespace {namespace}"
+                        )
                     time.sleep(1)
                     continue
             except json.decoder.JSONDecodeError:
@@ -314,11 +321,9 @@ def reconcile(node, cluster, args):
                     print(stderr.read().decode())
                     raise RuntimeError()
                 print(f"{node.name} uncordoned")
+            list(map(cluster.daemonsets_ready, cluster.namespaces))
+            list(map(cluster.deployments_ready, cluster.namespaces))
             cluster.ceph_ready()
-            cluster.daemonsets_ready("kube-system")
-            cluster.daemonsets_ready("default")
-            cluster.deployments_ready("default")
-            cluster.deployments_ready("kube-system")
     else:
         print(colored("No action needed on {}".format(node.name), "green"))
 
@@ -346,10 +351,8 @@ def main():
     if not args.skip_initial_health:
         cluster.k8s_ready()
         cluster.ceph_ready()
-        cluster.daemonsets_ready("kube-system")
-        cluster.daemonsets_ready("default")
-        cluster.deployments_ready("default")
-        cluster.deployments_ready("kube-system")
+        list(map(cluster.daemonsets_ready, cluster.namespaces))
+        list(map(cluster.deployments_ready, cluster.namespaces))
 
     if args.disruption_budget:
         disruption_budget = args.disruption_budget

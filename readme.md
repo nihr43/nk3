@@ -18,19 +18,23 @@ What do I mean by 'safe'?  The author believes repeatability and determinism are
 
 ```
 ---
-cluster:
-  join_address: 172.30.190.3
-  join_token: 2f909ce8-cae1-439a-86b3-da87b7ee9f55
-  nodes:
-    172.30.190.3:
-      initiator: true
-      boot_device: /dev/nvme0n1
-    172.30.190.4:
-      initiator: false
-      boot_device: /dev/nvme0n1
-    172.30.190.5:
-      initiator: false
-      boot_device: /dev/nvme0n1
+join_address: 172.30.190.3
+join_token: woof
+nix_channel: nixos-24.05
+nodes:
+  172.30.190.3:
+    initiator: false
+    boot_device: /dev/nvme0n1
+  172.30.190.4:
+    initiator: false
+    boot_device: /dev/nvme0n1
+  172.30.190.5:
+    initiator: false
+    boot_device: /dev/nvme0n1
+watch_namespaces:
+  - default
+  - kube-system
+  - rook-ceph
 ```
 
 where 172.30.190.3, ... are ips of fresh NixOS boxes with ssh enabled.  These parameters resemble the potential differences between hardware.  Everything else, including hostnames, is derived and templated.
