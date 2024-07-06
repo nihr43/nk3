@@ -369,9 +369,9 @@ def main():
 
     if not args.skip_initial_health:
         cluster.k8s_ready()
-        cluster.ceph_ready()
         list(map(cluster.daemonsets_ready, cluster.namespaces))
         list(map(cluster.deployments_ready, cluster.namespaces))
+        cluster.ceph_ready()
 
     if args.disruption_budget:
         disruption_budget = args.disruption_budget
