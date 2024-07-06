@@ -80,6 +80,11 @@ class Cluster:
                     )
                     return
                 else:
+                    if i % 10 == 0:
+                        unhealthy = desired_healthy - healthy
+                        print(
+                            f"{unhealthy} daemonsets recovering in namespace {namespace}"
+                        )
                     time.sleep(1)
                     continue
             except json.decoder.JSONDecodeError:
@@ -202,13 +207,15 @@ class Node:
                         condition["reason"] == "KubeletReady"
                         and condition["status"] == "True"
                     ):
-                        print(colored("k8s is ready on {}".format(self.name), "green"))
+                        print(
+                            colored("kubelet is ready on {}".format(self.name), "green")
+                        )
                         return
                     elif (
                         condition["reason"] == "KubeletReady"
                         and condition["status"] == "False"
                     ):
-                        print("k8s is not ready on {}".format(self.name))
+                        print("kubelet is not ready on {}".format(self.name))
                         time.sleep(1)
                         continue
             except json.decoder.JSONDecodeError:
