@@ -8,7 +8,7 @@ Sustainable, declarative, safe management of bare-metal k3s clusters on NixOS.
 
 `nk3` is the result of years of hacking together ansible roles and wrappers on various OSs and arriving at the conclusion that a single purpose-built tool is best.  Critically, the declarative nature of NixOS is without a doubt the way of the future - rather than cumulative OS configuration or big-hammer nuke-and-pave reimaging on every change.
 
-What do I mean by 'safe'?  The author believes repeatability and determinism are security `requirements`; undefined global mutable state is the root of all evil.
+What do I mean by 'safe'?  The author believes that reproducibility in infrastructure is an incontrovertible security requirement.  The ability to safely and correctly account for, modify, and delete resources is at least as important as their initial deployment.
 
 ## usage
 
