@@ -1,14 +1,12 @@
 # nk3
 
-Sustainable, declarative, safe management of bare-metal k3s clusters on NixOS.
+`nk3` is a purpose built configuration management tool for declarative, safe, long term operation of bare-metal kubernetes clusters on NixOS.
 
 ## rationale
 
 [NixOS](https://nixos.org/) "is a Linux distribution that uses Nix, a tool for reproducible, declarative and reliable package management and system configuration".  These properties make it an excellent choice for clean long-term management of physical kubernetes nodes.
 
 `nk3` is the result of years of hacking together ansible roles and wrappers on various OSs and arriving at the conclusion that a single purpose-built tool is best.  Critically, the declarative nature of NixOS is without a doubt the way of the future - rather than cumulative OS configuration or big-hammer nuke-and-pave reimaging on every change.
-
-What do I mean by 'safe'?  The author believes that reproducibility in infrastructure is an incontrovertible security and operational requirement.  The ability to safely and correctly account for, modify, and delete resources is at least as important as their initial deployment.
 
 ## usage
 
