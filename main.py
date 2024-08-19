@@ -317,6 +317,7 @@ def reconcile(node, cluster, args):
                 # if we just reboot, the first reconnect attempt may erroneously
                 # succeed before the box has actually shut down
                 node.ssh.exec_command("systemctl stop sshd && reboot")
+                time.sleep(10)
             node.sftp.close()
             node.ssh.close()
             node.ssh_ready()
