@@ -171,7 +171,7 @@ class Node:
         while i < 300:
             i += 1
             if i % 10 == 0:
-                print("Waiting for {} become reachable".format(self.name))
+                print("Waiting for {} to become reachable".format(self.name))
             try:
                 self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 self.ssh.connect(self.ip, 22, "root")
