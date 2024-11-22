@@ -26,8 +26,8 @@ class Cluster:
         self.namespaces = namespaces
 
     @classmethod
-    def from_yaml(cls, file_path):
-        with open(file_path, "r") as file:
+    def from_yaml(cls, args):
+        with open(args.inventory, "r") as file:
             data = yaml.safe_load(file)
             join_address = data["join_address"]
             join_token = data["join_token"]
@@ -35,21 +35,12 @@ class Cluster:
             namespaces = data["watch_namespaces"]
             nodes = []
             for n, d in data["nodes"].items():
-                nodes.append(Node(n, d["initiator"], d["boot_device"]))
+                nodes.append(Node(n, d["initiator"], d["boot_device"], args))
             return cls(join_address, join_token, nodes, nix_channel, namespaces)
 
     def k8s_ready(self):
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            futures = {pool.submit(n.k8s_ready): n for n in self.nodes}
-
-        for future in as_completed(futures):
-            try:
-                result = future.result()
-                if result:
-                    print(result)
-            except Exception:
-                traceback.print_exc()
-                sys.exit(1)
+        for n in self.nodes:
+            n.k8s_ready()
 
     def ceph_ready(self):
         self.nodes[0].ceph_ready()
@@ -136,11 +127,12 @@ class Cluster:
 
 
 class Node:
-    def __init__(self, ip, initiator, boot_device):
+    def __init__(self, ip, initiator, boot_device, args):
         self.ip = ip
         self.boot_device = boot_device
         self.initiator = initiator
         self.name = uuid.uuid5(uuid.NAMESPACE_OID, self.ip)
+        self.args = args
         self.ssh_ready()
         self.interface = self.get_interface()
         self.gateway = self.get_gateway()
@@ -174,13 +166,19 @@ class Node:
                 print("Waiting for {} to become reachable".format(self.name))
             try:
                 self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                self.ssh.connect(self.ip, 22, "root")
+                if self.args.private_key:
+                    key = paramiko.RSAKey.from_private_key_file(self.args.private_key)
+                    print(f"using {self.args.private_key}")
+                    self.ssh.connect(self.ip, 22, "root", pkey=key)
+                else:
+                    self.ssh.connect(self.ip, 22, "root")
                 self.sftp = self.ssh.open_sftp()
                 self.ssh.exec_command("hostname")
                 print("{} is reachable".format(self.name))
                 return
             except AttributeError:
                 self.ssh = paramiko.SSHClient()
+                time.sleep(1)
                 continue
             except (
                 paramiko.ssh_exception.SSHException,
@@ -218,7 +216,7 @@ class Node:
                         print("kubelet is not ready on {}".format(self.name))
                         time.sleep(1)
                         continue
-            except json.decoder.JSONDecodeError:
+            except (json.decoder.JSONDecodeError, ConnectionResetError):
                 time.sleep(1)
                 continue
 
@@ -296,7 +294,7 @@ def reconcile(node, cluster, args):
             with node.sftp.open("/etc/nixos/configuration.nix", "w") as remote_file:
                 remote_file.write(remote_config_str)
             print(f"`nixos-rebuild` failed on {node.name}.  Changes reverted")
-            raise RuntimeError()
+            os._exit(1)
         else:
             if args.verbose:
                 print(stdout.read().decode())
@@ -356,12 +354,13 @@ def main():
     parser.add_argument("--skip-initial-health", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-d", "--disruption-budget", type=int)
+    parser.add_argument("--private-key", type=str)
     args = parser.parse_args()
 
     if args.nixos_action != "boot" and args.nixos_action != "switch":
         raise AssertionError("--nixos-action must be one of boot, switch")
 
-    cluster = Cluster.from_yaml(args.inventory)
+    cluster = Cluster.from_yaml(args)
 
     try:
         os.mkdir("artifacts")
