@@ -3,13 +3,15 @@ import sys
 import time
 import yaml
 import json
-import paramiko
 import difflib
 import uuid
 import argparse
 import traceback
 import logging
 import ipaddress
+import fabric
+from io import StringIO
+from invoke.exceptions import UnexpectedExit
 from termcolor import colored
 from jinja2 import Environment, FileSystemLoader
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -50,10 +52,10 @@ class Cluster:
         while i < 600:
             i += 1
             try:
-                stdin, stdout, stderr = self.nodes[0].ssh.exec_command(
+                result = self.nodes[0].ssh.run(
                     f"kubectl get daemonset -o json -n {namespace}"
                 )
-                js = json.loads(stdout.read().decode())
+                js = json.loads(result.stdout)
                 desired_healthy = len(js["items"])
                 healthy = 0
                 for ds in js["items"]:
@@ -89,10 +91,10 @@ class Cluster:
         while i < 600:
             i += 1
             try:
-                stdin, stdout, stderr = self.nodes[0].ssh.exec_command(
+                result = self.nodes[0].ssh.run(
                     f"kubectl get deployment -o json -n {namespace}"
                 )
-                js = json.loads(stdout.read().decode())
+                js = json.loads(result.stdout)
                 desired_healthy = len(js["items"])
                 healthy = 0
                 for d in js["items"]:
@@ -138,20 +140,16 @@ class Node:
         self.gateway = self.get_gateway()
 
     def get_interface(self):
-        stdin, stdout, stderr = self.ssh.exec_command(
-            "ip r get 1.1.1.1 | awk '/via/{print $5}'"
-        )
-        interface = stdout.read().decode().strip()
+        result = self.ssh.run("ip r get 1.1.1.1 | awk '/via/{print $5}'")
+        interface = result.stdout.strip()
         if interface.startswith(("eth", "eno", "enp")):
             return interface
         else:
             raise NotImplementedError(interface)
 
     def get_gateway(self):
-        stdin, stdout, stderr = self.ssh.exec_command(
-            "ip r get 1.1.1.1 | awk '/via/{print $3}'"
-        )
-        gw = stdout.read().decode().strip()
+        result = self.ssh.run("ip r get 1.1.1.1 | awk '/via/{print $3}'")
+        gw = result.stdout.strip()
         try:
             ipaddress.IPv4Address(gw)
             return gw
@@ -165,24 +163,24 @@ class Node:
             if i % 10 == 0:
                 print("Waiting for {} to become reachable".format(self.name))
             try:
-                self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 if self.args.private_key:
-                    key = paramiko.RSAKey.from_private_key_file(self.args.private_key)
                     print(f"using {self.args.private_key}")
-                    self.ssh.connect(self.ip, 22, "root", pkey=key)
+                    self.ssh = fabric.Connection(
+                        host=self.ip,
+                        user="root",
+                        connect_kwargs={"key_filename": self.args.private_key},
+                        config=fabric.config.Config(overrides={"run": {"hide": True}}),
+                    )
                 else:
-                    self.ssh.connect(self.ip, 22, "root")
-                self.sftp = self.ssh.open_sftp()
-                self.ssh.exec_command("hostname")
+                    self.ssh = fabric.Connection(
+                        host=self.ip,
+                        user="root",
+                        config=fabric.config.Config(overrides={"run": {"hide": True}}),
+                    )
+                self.ssh.run("hostname")
                 print("{} is reachable".format(self.name))
                 return
-            except AttributeError:
-                self.ssh = paramiko.SSHClient()
-                time.sleep(1)
-                continue
             except (
-                paramiko.ssh_exception.SSHException,
-                paramiko.ssh_exception.NoValidConnectionsError,
                 TimeoutError,
                 EOFError,
             ):
@@ -196,10 +194,8 @@ class Node:
         while i < 600:
             i += 1
             try:
-                stdin, stdout, stderr = self.ssh.exec_command(
-                    "kubectl get node {} -o json".format(self.name)
-                )
-                node_json = json.loads(stdout.read().decode())
+                result = self.ssh.run("kubectl get node {} -o json".format(self.name))
+                node_json = json.loads(result.stdout)
                 for condition in node_json["status"]["conditions"]:
                     if (
                         condition["reason"] == "KubeletReady"
@@ -226,11 +222,11 @@ class Node:
         i = 0
         while i < 600:
             i += 1
-            stdin, stdout, stderr = self.ssh.exec_command(
+            result = self.ssh.run(
                 "kubectl -n rook-ceph exec deployment/rook-ceph-tools --pod-running-timeout=5m -- ceph status -f json"
             )
             try:
-                js = json.loads(stdout.read().decode())
+                js = json.loads(result.stdout)
             except json.decoder.JSONDecodeError:
                 time.sleep(1)
                 continue
@@ -257,84 +253,82 @@ def reconcile(node, cluster, args):
         f.write(output)
 
     with open(output_file_path, "r") as local_file:
-        local_config = local_file.readlines()
+        local_config = local_file.read()
 
-    with node.sftp.file("/etc/nixos/configuration.nix", "r") as remote_file:
-        remote_config = remote_file.readlines()
-        remote_file.seek(0)
-        remote_config_str = remote_file.read()
+    remote_config = node.ssh.run("cat /etc/nixos/configuration.nix").stdout
 
-    diff = list(difflib.unified_diff(remote_config, local_config))
-    diff_formatted = colored("".join(diff).strip(), "yellow")
+    diff = list(
+        difflib.unified_diff(remote_config.splitlines(), local_config.splitlines())
+    )
 
     if diff:
         print("{} modified:".format(node.name))
+        diff_formatted = colored("\n".join(diff), "yellow")
         print(diff_formatted)
-        node.sftp.put(output_file_path, "/etc/nixos/configuration.nix")
+        node.ssh.put(local=output_file_path, remote="/etc/nixos/configuration.nix")
 
     if diff or args.upgrade:
         print(f"Rebuilding NixOS on {node.name}")
         if args.upgrade:
-            stdin, stdout, stderr = node.ssh.exec_command("uname -r")
-            initial_kernel = stdout.read().decode().strip()
+            result = node.ssh.run("uname -r")
+            initial_kernel = result.stdout.strip()
             channel_cmd = f"nix-channel --add https://nixos.org/channels/{cluster.nix_channel} nixos"
-            stdin, stdout, stderr = node.ssh.exec_command(channel_cmd)
-            if stdout.channel.recv_exit_status() != 0:
-                print(stdout.read().decode())
-                print(stderr.read().decode())
-                raise RuntimeError
+            try:
+                node.ssh.run(channel_cmd)
+            except UnexpectedExit as e:
+                print(e)
+                sys.exit(1)
             nixos_cmd = f"nixos-rebuild {args.nixos_action} --upgrade"
         else:
             nixos_cmd = f"nixos-rebuild {args.nixos_action}"
-        stdin, stdout, stderr = node.ssh.exec_command(nixos_cmd)
 
-        if stdout.channel.recv_exit_status() != 0:
-            print(stdout.read().decode())
-            print(stderr.read().decode())
-            with node.sftp.open("/etc/nixos/configuration.nix", "w") as remote_file:
-                remote_file.write(remote_config_str)
-            print(f"`nixos-rebuild` failed on {node.name}.  Changes reverted")
+        try:
+            result = node.ssh.run(nixos_cmd)
+        except UnexpectedExit as e:
+            # if rebuild faild, write the original back
+            membuf = StringIO(remote_config)
+            node.ssh.put(membuf, remote="/etc/nixos/configuration.nix")
+            print(e)
+            print(f"`nixos-rebuild` failed on {node.name}.  Changes reverted.")
             os._exit(1)
         else:
             if args.verbose:
-                print(stdout.read().decode())
-                print(stderr.read().decode())
+                print(result.stdout)
+                print(result.stderr)
             if args.nixos_action == "boot":
                 print(f"Draining {node.name}")
-                stdin, stdout, stderr = node.ssh.exec_command(
-                    f"kubectl drain {node.name} --ignore-daemonsets --delete-emptydir-data"
-                )
-                if stdout.channel.recv_exit_status() != 0:
-                    print(stdout.read().decode())
-                    print(stderr.read().decode())
-                    raise RuntimeError()
+                try:
+                    result = node.ssh.run(
+                        f"kubectl drain {node.name} --ignore-daemonsets --delete-emptydir-data"
+                    )
+                except UnexpectedExit as e:
+                    print(e)
+                    sys.exit(1)
                 if args.verbose:
-                    print(stdout.read().decode())
-                    print(stderr.read().decode())
+                    print(result.stdout)
+                    print(result.stderr)
                 print(f"Rebooting {node.name}")
                 # if we just reboot, the first reconnect attempt may erroneously
                 # succeed before the box has actually shut down
-                node.ssh.exec_command("systemctl stop sshd && reboot")
+                node.ssh.run("systemctl stop sshd && reboot")
                 time.sleep(10)
             node.sftp.close()
             node.ssh.close()
             node.ssh_ready()
             cluster.k8s_ready()
             if args.nixos_action == "boot":
-                stdin, stdout, stderr = node.ssh.exec_command(
-                    f"kubectl uncordon {node.name}"
-                )
-                if stdout.channel.recv_exit_status() != 0:
-                    print(stdout.read().decode())
-                    print(stderr.read().decode())
-                    raise RuntimeError()
+                try:
+                    result = node.ssh.run(f"kubectl uncordon {node.name}")
+                except UnexpectedExit as e:
+                    print(e)
+                    sys.exit(1)
                 print(f"{node.name} uncordoned")
             list(map(cluster.daemonsets_ready, cluster.namespaces))
             list(map(cluster.deployments_ready, cluster.namespaces))
             cluster.ceph_ready()
             if args.upgrade:
-                stdin, stdout, stderr = node.ssh.exec_command("uname -r")
-                final_kernel = stdout.read().decode().strip()
+                result = node.ssh.run("uname -r")
+                final_kernel = result.stdout.strip()
                 if final_kernel != initial_kernel:
                     print(
                         colored(
