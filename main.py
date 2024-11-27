@@ -7,7 +7,6 @@ import difflib
 import uuid
 import argparse
 import traceback
-import logging
 import ipaddress
 import fabric
 from io import StringIO
@@ -15,8 +14,7 @@ from invoke.exceptions import UnexpectedExit
 from termcolor import colored
 from jinja2 import Environment, FileSystemLoader
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-logging.getLogger("paramiko").setLevel(logging.CRITICAL)
+from paramiko.ssh_exception import NoValidConnectionsError
 
 
 class Cluster:
