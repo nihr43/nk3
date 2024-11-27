@@ -1,10 +1,11 @@
 { nixpkgs ? import <nixpkgs> {  } }:
 
 let
-  pkgs = with nixpkgs.python311Packages; [
+  pkgs = with nixpkgs.python312Packages; [
     pycryptodome
     pylxd
     jinja2
+    fabric
     paramiko
     pyyaml
     termcolor
