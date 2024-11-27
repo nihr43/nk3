@@ -180,10 +180,7 @@ class Node:
                 self.ssh.run("hostname")
                 print("{} is reachable".format(self.name))
                 return
-            except (
-                TimeoutError,
-                EOFError,
-            ):
+            except (TimeoutError, EOFError, NoValidConnectionsError):
                 time.sleep(1)
                 continue
 
@@ -212,7 +209,7 @@ class Node:
                         print("kubelet is not ready on {}".format(self.name))
                         time.sleep(1)
                         continue
-            except (json.decoder.JSONDecodeError, ConnectionResetError):
+            except (json.decoder.JSONDecodeError, ConnectionResetError, UnexpectedExit):
                 time.sleep(1)
                 continue
 
@@ -322,7 +319,6 @@ updating GRUB 2 menu...
                 # succeed before the box has actually shut down
                 node.ssh.run("systemctl stop sshd && reboot")
                 time.sleep(10)
-            node.sftp.close()
             node.ssh.close()
             node.ssh_ready()
             cluster.k8s_ready()
