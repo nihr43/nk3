@@ -295,6 +295,16 @@ def reconcile(node, cluster, args):
             if args.verbose:
                 print(result.stdout)
                 print(result.stderr)
+
+            no_action = """unpacking channels...
+building Nix...
+building the system configuration...
+updating GRUB 2 menu...
+"""
+
+            if args.upgrade and result.stderr == no_action:
+                print(colored(f"No upgrade needed on {node.name}", "yellow"))
+                return
             if args.nixos_action == "boot":
                 print(f"Draining {node.name}")
                 try:
