@@ -236,6 +236,45 @@ class Node:
 
         raise TimeoutError
 
+    def reboot(self, cluster, args):
+        """
+        drain node,
+        reboot,
+        wait for ssh,
+        wait for k8s api,
+        uncordon node,
+        wait for deployment/deamonset recovery,
+        wait for ceph recovery
+        """
+        print(f"Draining {self.name}")
+        try:
+            result = self.ssh.run(
+                f"kubectl drain {self.name} --ignore-daemonsets --delete-emptydir-data"
+            )
+        except UnexpectedExit as e:
+            print(e)
+            sys.exit(1)
+        if args.verbose:
+            print(result.stdout)
+            print(result.stderr)
+        print(f"Rebooting {self.name}")
+        # if we just reboot, the first reconnect attempt may erroneously
+        # succeed before the box has actually shut down
+        self.ssh.run("systemctl stop sshd && reboot")
+        time.sleep(10)
+        self.ssh.close()
+        self.ssh_ready()
+        cluster.k8s_ready()
+        try:
+            result = self.ssh.run(f"kubectl uncordon {self.name}")
+        except UnexpectedExit as e:
+            print(e)
+            sys.exit(1)
+        print(f"{self.name} uncordoned")
+        list(map(cluster.daemonsets_ready, cluster.namespaces))
+        list(map(cluster.deployments_ready, cluster.namespaces))
+        cluster.ceph_ready()
+
 
 def reconcile(node, cluster, args):
     file_loader = FileSystemLoader("templates/")
@@ -298,38 +337,10 @@ updating GRUB 2 menu...
 """
 
             if args.upgrade and result.stderr == no_action:
-                print(colored(f"No upgrade needed on {node.name}", "yellow"))
+                print(colored(f"No upgrade needed on {node.name}", "green"))
                 return
             if args.nixos_action == "boot":
-                print(f"Draining {node.name}")
-                try:
-                    result = node.ssh.run(
-                        f"kubectl drain {node.name} --ignore-daemonsets --delete-emptydir-data"
-                    )
-                except UnexpectedExit as e:
-                    print(e)
-                    sys.exit(1)
-                if args.verbose:
-                    print(result.stdout)
-                    print(result.stderr)
-                print(f"Rebooting {node.name}")
-                # if we just reboot, the first reconnect attempt may erroneously
-                # succeed before the box has actually shut down
-                node.ssh.run("systemctl stop sshd && reboot")
-                time.sleep(10)
-            node.ssh.close()
-            node.ssh_ready()
-            cluster.k8s_ready()
-            if args.nixos_action == "boot":
-                try:
-                    result = node.ssh.run(f"kubectl uncordon {node.name}")
-                except UnexpectedExit as e:
-                    print(e)
-                    sys.exit(1)
-                print(f"{node.name} uncordoned")
-            list(map(cluster.daemonsets_ready, cluster.namespaces))
-            list(map(cluster.deployments_ready, cluster.namespaces))
-            cluster.ceph_ready()
+                node.reboot(cluster, args)
             if args.upgrade:
                 result = node.ssh.run("uname -r")
                 final_kernel = result.stdout.strip()
