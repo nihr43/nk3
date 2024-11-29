@@ -364,6 +364,7 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-d", "--disruption-budget", type=int)
     parser.add_argument("--private-key", type=str)
+    parser.add_argument("-r", "--reboot", action="store_true")
     args = parser.parse_args()
 
     if args.nixos_action != "boot" and args.nixos_action != "switch":
@@ -381,6 +382,11 @@ def main():
         list(map(cluster.daemonsets_ready, cluster.namespaces))
         list(map(cluster.deployments_ready, cluster.namespaces))
         cluster.ceph_ready()
+
+    if args.reboot:
+        for n in cluster.nodes:
+            n.reboot(cluster, args)
+        return
 
     if args.disruption_budget:
         disruption_budget = args.disruption_budget
