@@ -1,4 +1,3 @@
-import os
 import sys
 import time
 import yaml
@@ -9,6 +8,7 @@ import argparse
 import traceback
 import ipaddress
 import fabric
+from os import mkdir
 from io import StringIO
 from invoke.exceptions import UnexpectedExit
 from termcolor import colored
@@ -324,7 +324,7 @@ def reconcile(node, cluster, args):
             node.ssh.put(membuf, remote="/etc/nixos/configuration.nix")
             print(e)
             print(f"`nixos-rebuild` failed on {node.name}.  Changes reverted.")
-            os._exit(1)
+            sys.exit(1)
         else:
             if args.verbose:
                 print(result.stdout)
@@ -373,7 +373,7 @@ def main():
     cluster = Cluster.from_yaml(args)
 
     try:
-        os.mkdir("artifacts")
+        mkdir("artifacts")
     except FileExistsError:
         pass
 
