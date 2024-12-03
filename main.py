@@ -228,6 +228,11 @@ class Node:
             health = js["health"]["status"]
             if i % 10 == 0 and health != "HEALTH_OK":
                 print(f"ceph state is {health}")
+            if health != "HEALTH_OK" and len(js["health"]["checks"]) == 1:
+                reason = next(iter(js["health"]["checks"]))
+                if reason == "MON_CLOCK_SKEW" or reason == "RECENT_CRASH":
+                    print(colored(f"tolerating ceph {reason} warning", "yellow"))
+                    return
             if health == "HEALTH_OK":
                 print(colored(f"ceph state is {health}", "green"))
                 return
