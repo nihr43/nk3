@@ -8,6 +8,7 @@ import argparse
 import traceback
 import ipaddress
 import fabric
+import re
 from os import mkdir
 from io import StringIO
 from invoke.exceptions import UnexpectedExit
@@ -335,13 +336,21 @@ def reconcile(node, cluster, args):
                 print(result.stdout)
                 print(result.stderr)
 
-            no_action = """unpacking channels...
-building Nix...
-building the system configuration...
-updating GRUB 2 menu...
-"""
+            paths_fetched_match = re.search(
+                r"these (\d+) paths will be fetched", result.stderr
+            )
+            if paths_fetched_match:
+                num_paths = paths_fetched_match.group(1)
+                print(colored(f"{num_paths} paths fetched", "green"))
 
-            if args.upgrade and result.stderr == no_action:
+            derivations_built_match = re.search(
+                r"these (\d+) derivations will be built", result.stderr
+            )
+            if derivations_built_match:
+                num_derivations = derivations_built_match.group(1)
+                print(colored(f"{num_derivations} derivations built", "green"))
+
+            if args.upgrade and not derivations_built_match:
                 print(colored(f"No upgrade needed on {node.name}", "green"))
                 return
             if args.nixos_action == "boot":
