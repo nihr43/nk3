@@ -3,10 +3,8 @@ import time
 import yaml
 import json
 import difflib
-import uuid
 import argparse
 import traceback
-import ipaddress
 import fabric
 import re
 from os import mkdir
@@ -35,8 +33,8 @@ class Cluster:
             nix_channel = data["nix_channel"]
             namespaces = data["watch_namespaces"]
             nodes = []
-            for n, d in data["nodes"].items():
-                nodes.append(Node(n, d["initiator"], d["boot_device"], args))
+            for n, hostvars in data["nodes"].items():
+                nodes.append(Node(n, hostvars, args))
             return cls(join_address, join_token, nodes, nix_channel, namespaces)
 
     def k8s_ready(self):
@@ -128,32 +126,13 @@ class Cluster:
 
 
 class Node:
-    def __init__(self, ip, initiator, boot_device, args):
+    def __init__(self, ip, hostvars, args):
         self.ip = ip
-        self.boot_device = boot_device
-        self.initiator = initiator
-        self.name = uuid.uuid5(uuid.NAMESPACE_OID, self.ip)
+        self.name = hostvars["hostname"]
+        self.hostvars = hostvars
         self.args = args
         self.ssh_ready()
-        self.interface = self.get_interface()
-        self.gateway = self.get_gateway()
-
-    def get_interface(self):
-        result = self.ssh.run("ip r get 1.1.1.1 | awk '/via/{print $5}'")
-        interface = result.stdout.strip()
-        if interface.startswith(("eth", "eno", "enp")):
-            return interface
-        else:
-            raise NotImplementedError(interface)
-
-    def get_gateway(self):
-        result = self.ssh.run("ip r get 1.1.1.1 | awk '/via/{print $3}'")
-        gw = result.stdout.strip()
-        try:
-            ipaddress.IPv4Address(gw)
-            return gw
-        except ipaddress.AddressValueError as e:
-            raise e
+        print(self.hostvars)
 
     def ssh_ready(self):
         i = 0
@@ -286,7 +265,7 @@ def reconcile(node, cluster, args):
     file_loader = FileSystemLoader("templates/")
     env = Environment(loader=file_loader)
     template = env.get_template("configuration.nix")
-    output = template.render(node=node, cluster=cluster)
+    output = template.render(node=node, hostvars=node.hostvars, cluster=cluster)
 
     output_file_path = "artifacts/{}".format(node.name)
     with open(output_file_path, "w") as f:
