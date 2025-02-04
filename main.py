@@ -351,7 +351,7 @@ def reconcile(node, cluster, args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--inventory", default="inventory.yaml")
-    parser.add_argument("-n", "--nixos-action", default="boot")
+    parser.add_argument("-a", "--action", default="boot")
     parser.add_argument("-u", "--upgrade", action="store_true")
     parser.add_argument("--skip-initial-health", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
