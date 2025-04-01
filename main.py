@@ -297,9 +297,9 @@ def reconcile(node, cluster, args):
             except UnexpectedExit as e:
                 print(e)
                 sys.exit(1)
-            nixos_cmd = f"nixos-rebuild {args.nixos_action} --upgrade"
+            nixos_cmd = f"nixos-rebuild {args.action} --upgrade"
         else:
-            nixos_cmd = f"nixos-rebuild {args.nixos_action}"
+            nixos_cmd = f"nixos-rebuild {args.action}"
 
         try:
             result = node.ssh.run(nixos_cmd)
@@ -332,7 +332,7 @@ def reconcile(node, cluster, args):
             if args.upgrade and not derivations_built_match:
                 print(colored(f"No upgrade needed on {node.name}", "green"))
                 return
-            if args.nixos_action == "boot":
+            if args.action == "boot":
                 node.reboot(cluster, args)
             if args.upgrade:
                 result = node.ssh.run("uname -r")
@@ -360,7 +360,7 @@ def main():
     parser.add_argument("-r", "--reboot", action="store_true")
     args = parser.parse_args()
 
-    if args.nixos_action != "boot" and args.nixos_action != "switch":
+    if args.action != "boot" and args.action != "switch":
         raise AssertionError("--nixos-action must be one of boot, switch")
 
     cluster = Cluster.from_yaml(args)
